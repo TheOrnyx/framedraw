@@ -1,9 +1,12 @@
 CC = gcc
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -lcairo
 LDFLAGS =
 
+# List of source files
+SOURCES = framedraw.c bounce.c
+
 # Regular build
-framedraw: framedraw.o
+framedraw: $(SOURCES:.c=.o)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
 
 # Debug build
