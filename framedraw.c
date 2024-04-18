@@ -5,11 +5,23 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <linux/fb.h>
+#include <stdint.h>
+#include <sys/mman.h>
 
 #define ERR(exit_msg, perror_src, exit_code)		\
 		 fprintf(stderr, exit_msg);									\
 		 perror(perror_src);												\
 		 exit(exit_code);
+
+union fb_color {
+		 struct __attribute__((__packed__)) {
+					uint8_t b;
+					uint8_t g;
+					uint8_t r;
+					uint8_t a;
+		 } rgba;
+		 uint32_t data;
+};
 
 // open the framebuffer file
 int get_fd(void);
@@ -21,6 +33,8 @@ void get_var_screeninfo(int fd, struct fb_var_screeninfo *vsi);
 void print_var_screeninfo(const struct fb_var_screeninfo *vsi);
 // Print the info about a fix screeninfo struct (Also stolen from soda, thanks)
 void print_fix_screeninfo(const struct fb_fix_screeninfo *fsi);
+// Get the background color for the framebuffer (once again partly stolen from sofa, thanks ^^)
+union fb_color get_bg_color(const union fb_color *fbc, uint32_t width, uint32_t height);
 
 
 int main(int argc, char *argv[]) {
@@ -45,8 +59,38 @@ int main(int argc, char *argv[]) {
 #ifdef DEBUG
 		 print_var_screeninfo(&vsi);
 #endif
+
+		 if (vsi.bits_per_pixel != 32) {
+					ERR("Program only supports 32 bits per pixel", "", EXIT_FAILURE);
+		 }
+
+		 const size_t fb_size = vsi.xres * vsi.yres;
+		 const size_t fb_mem_size = fb_size * vsi.bits_per_pixel / 8;
+		 uint32_t *fb = mmap(0, fb_mem_size, PROT_WRITE, MAP_SHARED, fd, 0);
+
+		 if (fb == NULL || fb == MAP_FAILED) {
+					ERR("Failed to map framebuffer\n", "mmap", EXIT_FAILURE);
+		 }
+
 		 
+		 union fb_color *fbc = (union fb_color *)fb; // represent framebuffer by array of color unions
+		 union fb_color bg_col = get_bg_color(fbc, vsi.xres, vsi.yres);
+
+#ifdef DEBUG // thanks again sofa
+		 printf("bg { r: %u, g: %u, b: %u, t: %u }\n",
+						bg_col.rgba.r, bg_col.rgba.g, bg_col.rgba.b, bg_col.rgba.a);
+#endif
+		 
+		 if(munmap(fb, fb_mem_size)) { // free the fb
+					ERR("Failed munmapping fb", "mmap", EXIT_FAILURE);
+		 }
 		 return 0;
+}
+
+// get the background color of the framebuffer
+// Just going to do it based on the bottom right pixel.
+union fb_color get_bg_color(const union fb_color *fbc, uint32_t width, uint32_t height) {
+		 return (union fb_color) {.data = fbc[width*height-1].data};
 }
 
 int get_fd(void) {
